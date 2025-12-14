@@ -16,8 +16,7 @@
 #ifdef WITH_MIMALLOC
 // Forward declarations of functions used in our mimalloc modifications
 static void _PyMem_mi_page_clear_qsbr(mi_page_t *page);
-static bool _PyMem_mi_page_is_safe_to_free(mi_page_t *page);
-static bool _PyMem_mi_page_maybe_free(mi_page_t *page, mi_page_queue_t *pq, bool force);
+static bool _PyMem_mi_page_maybe_free(mi_page_t *page, mi_page_queue_t *pq);
 static void _PyMem_mi_page_reclaimed(mi_page_t *page);
 static void _PyMem_mi_heap_collect_qsbr(mi_heap_t *heap);
 #  include "pycore_mimalloc.h"
@@ -106,25 +105,6 @@ _PyMem_mi_page_clear_qsbr(mi_page_t *page)
 #endif
 }
 
-// Check if an empty, newly reclaimed page is safe to free now.
-static bool
-_PyMem_mi_page_is_safe_to_free(mi_page_t *page)
-{
-    assert(mi_page_all_free(page));
-#ifdef Py_GIL_DISABLED
-    assert(page->qsbr_node.next == NULL);
-    if (page->use_qsbr && page->qsbr_goal != 0) {
-        _PyThreadStateImpl *tstate = (_PyThreadStateImpl *)_PyThreadState_GET();
-        if (tstate == NULL) {
-            return false;
-        }
-        return _Py_qbsr_goal_reached(tstate->qsbr, page->qsbr_goal);
-    }
-#endif
-    return true;
-
-}
-
 #ifdef Py_GIL_DISABLED
 
 // If we are deferring collection of more than this amount of memory for
@@ -153,7 +133,7 @@ should_advance_qsbr_for_page(struct _qsbr_thread_state *qsbr, mi_page_t *page)
 #endif
 
 static bool
-_PyMem_mi_page_maybe_free(mi_page_t *page, mi_page_queue_t *pq, bool force)
+_PyMem_mi_page_maybe_free(mi_page_t *page, mi_page_queue_t *pq)
 {
 #ifdef Py_GIL_DISABLED
     assert(mi_page_all_free(page));
@@ -161,7 +141,7 @@ _PyMem_mi_page_maybe_free(mi_page_t *page, mi_page_queue_t *pq, bool force)
         _PyThreadStateImpl *tstate = (_PyThreadStateImpl *)PyThreadState_GET();
         if (page->qsbr_goal != 0 && _Py_qbsr_goal_reached(tstate->qsbr, page->qsbr_goal)) {
             _PyMem_mi_page_clear_qsbr(page);
-            _mi_page_free(page, pq, force);
+            _mi_page_free(page, pq);
             return true;
         }
 
@@ -179,7 +159,7 @@ _PyMem_mi_page_maybe_free(mi_page_t *page, mi_page_queue_t *pq, bool force)
         return false;
     }
 #endif
-    _mi_page_free(page, pq, force);
+    _mi_page_free(page, pq);
     return true;
 }
 
@@ -3454,11 +3434,11 @@ static void
 py_mimalloc_print_stats(FILE *out)
 {
     fprintf(out, "Small block threshold = %zu, in %u size classes.\n",
-        (size_t)MI_SMALL_OBJ_SIZE_MAX, MI_BIN_HUGE);
+        (size_t)MI_SMALL_MAX_OBJ_SIZE, MI_BIN_HUGE);
     fprintf(out, "Medium block threshold = %zu\n",
-            (size_t)MI_MEDIUM_OBJ_SIZE_MAX);
+            (size_t)MI_MEDIUM_MAX_OBJ_SIZE);
     fprintf(out, "Large object max size = %zu\n",
-            (size_t)MI_LARGE_OBJ_SIZE_MAX);
+            (size_t)MI_LARGE_MAX_OBJ_SIZE);
 
     mi_heap_t *heap = mi_heap_get_default();
     struct _alloc_stats stats;

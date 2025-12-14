@@ -2125,15 +2125,17 @@ Objects/obmalloc.o: $(srcdir)/Objects/mimalloc/alloc.c \
 		$(srcdir)/Objects/mimalloc/alloc-aligned.c \
 		$(srcdir)/Objects/mimalloc/alloc-posix.c \
 		$(srcdir)/Objects/mimalloc/arena.c \
+		$(srcdir)/Objects/mimalloc/arena-meta.c \
 		$(srcdir)/Objects/mimalloc/bitmap.c \
+		$(srcdir)/Objects/mimalloc/free.c \
 		$(srcdir)/Objects/mimalloc/heap.c \
 		$(srcdir)/Objects/mimalloc/init.c \
+		$(srcdir)/Objects/mimalloc/libc.c \
 		$(srcdir)/Objects/mimalloc/options.c \
 		$(srcdir)/Objects/mimalloc/os.c \
 		$(srcdir)/Objects/mimalloc/page.c \
+		$(srcdir)/Objects/mimalloc/page-map.c \
 		$(srcdir)/Objects/mimalloc/random.c \
-		$(srcdir)/Objects/mimalloc/segment.c \
-		$(srcdir)/Objects/mimalloc/segment-map.c \
 		$(srcdir)/Objects/mimalloc/stats.c \
 		$(srcdir)/Objects/mimalloc/prim/prim.c \
 		$(srcdir)/Objects/mimalloc/prim/osx/prim.c \
