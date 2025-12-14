@@ -25,6 +25,12 @@ terms of the MIT license. A copy of the license can be found in the file
 #include "bits.h"     // size defines (MI_INTPTR_SIZE etc), bit operations
 #include "atomic.h"   // _Atomic primitives
 
+// CPython free-threading support (Py_GIL_DISABLED) embeds CPython's llist nodes
+// in mi_page_t for QSBR page queues.
+#if defined(Py_GIL_DISABLED) && defined(Py_BUILD_CORE)
+#include "pycore_llist.h"  // struct llist_node
+#endif
+
 // Minimal alignment necessary. On most platforms 16 bytes are needed
 // due to SSE registers for example. This must be at least `sizeof(void*)`
 #ifndef MI_MAX_ALIGN_SIZE

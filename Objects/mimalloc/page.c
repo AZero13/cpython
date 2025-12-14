@@ -276,6 +276,10 @@ void _mi_heap_page_reclaim(mi_heap_t* heap, mi_page_t* page)
   mi_assert_internal(mi_page_is_abandoned(page));
 
   mi_page_set_heap(page,heap);
+#ifdef Py_GIL_DISABLED
+  page->use_qsbr = heap->page_use_qsbr;
+#endif
+  _PyMem_mi_page_clear_qsbr(page);
   _mi_page_free_collect(page, false); // ensure used count is up to date
   mi_page_queue_t* pq = mi_heap_page_queue_of(heap, page);
   mi_page_queue_push_at_end(heap, pq, page);
@@ -721,8 +725,9 @@ mi_decl_nodiscard bool _mi_page_init(mi_heap_t* heap, mi_page_t* page) {
   mi_assert_internal(page->prev == NULL);
 #ifdef Py_GIL_DISABLED
   page->use_qsbr = heap->page_use_qsbr;
-  mi_assert_internal(page->qsbr_goal == 0);
-  mi_assert_internal(page->qsbr_node.next == NULL);
+  page->qsbr_goal = 0;
+  page->qsbr_node.next = NULL;
+  page->qsbr_node.prev = NULL;
 #endif
   mi_assert_internal(page->retire_expire == 0);
   mi_assert_internal(!mi_page_has_aligned(page));

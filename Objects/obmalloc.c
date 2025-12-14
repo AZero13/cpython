@@ -210,7 +210,7 @@ _PyMem_mi_heap_collect_qsbr(mi_heap_t *heap)
         }
 
         _PyMem_mi_page_clear_qsbr(page);
-        _mi_page_free(page, mi_page_queue_of(page), false);
+        _mi_page_free(page, mi_page_queue_of(page));
     }
 #endif
 }
