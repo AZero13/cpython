@@ -326,7 +326,7 @@ static void
 gc_restore_tid(PyObject *op)
 {
     assert(_PyInterpreterState_GET()->stoptheworld.world_stopped);
-    mi_segment_t *segment = _mi_ptr_segment(op);
+    mi_page_t *page = _mi_ptr_page(op);
     if (_Py_REF_IS_MERGED(op->ob_ref_shared)) {
         op->ob_tid = 0;
     }
@@ -335,7 +335,7 @@ gc_restore_tid(PyObject *op)
         // a different thread or its segment was abandoned and reclaimed.
         // The segment thread id might be zero, in which case we should
         // ensure the refcounts are now merged.
-        op->ob_tid = segment->thread_id;
+        op->ob_tid = mi_page_thread_id(page);
         if (op->ob_tid == 0) {
             merge_refcount(op, 0);
         }

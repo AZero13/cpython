@@ -215,6 +215,26 @@ _PyMem_mi_heap_collect_qsbr(mi_heap_t *heap)
 #endif
 }
 
+#ifdef Py_GIL_DISABLED
+// Minimal compatibility abandoned-pool visitor. mimalloc v3 no longer exposes
+// abandoned pools; CPython still tracks them to let free-threading GC scan
+// pages from exited threads. The current v3 integration does not maintain a
+// separate abandoned list, so this is a no-op visitor that preserves API
+// compatibility.
+bool
+_mi_abandoned_pool_visit_blocks(mi_abandoned_pool_t *pool, uint8_t tag,
+                                bool visit_all, mi_block_visit_fun *visitor,
+                                void *arg)
+{
+    (void)pool;
+    (void)tag;
+    (void)visit_all;
+    (void)visitor;
+    (void)arg;
+    return true;
+}
+#endif
+
 void *
 _PyMem_MiMalloc(void *ctx, size_t size)
 {
@@ -2786,21 +2806,9 @@ fill_mem_debug(debug_alloc_api_t *api, void *data, int c, size_t nbytes,
 {
 #ifdef Py_GIL_DISABLED
     if (api->api_id == 'o') {
-        // Don't overwrite the first few bytes of a PyObject allocation in the
-        // free-threaded build
-        _PyThreadStateImpl *tstate = (_PyThreadStateImpl *)_PyThreadState_GET();
-        size_t debug_offset;
-        if (is_alloc) {
-            debug_offset = tstate->mimalloc.current_object_heap->debug_offset;
-        }
-        else {
-            char *alloc = (char *)data - 2*SST;  // start of the allocation
-            debug_offset = _mi_ptr_page(alloc)->debug_offset;
-        }
-        debug_offset -= 2*SST;  // account for pymalloc extra bytes
-        if (debug_offset < nbytes) {
-            memset((char *)data + debug_offset, c, nbytes - debug_offset);
-        }
+        // In mimalloc v3 the debug_offset field was removed; fall back to
+        // filling the entire region.
+        memset(data, c, nbytes);
         return;
     }
 #endif

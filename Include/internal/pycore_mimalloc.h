@@ -51,6 +51,19 @@ extern "C++" {
 #endif
 
 #ifdef Py_GIL_DISABLED
+// CPython-specific abandoned pool (compat layer for free-threading GC).
+// Upstream mimalloc no longer exposes this type in v3; we provide a
+// minimal definition used by CPython to track pages from exited threads.
+typedef struct mi_abandoned_pool_s {
+    struct llist_node head;
+} mi_abandoned_pool_t;
+
+// Visit all blocks in the abandoned pool for a given heap tag.
+// Returns true on success.
+bool _mi_abandoned_pool_visit_blocks(mi_abandoned_pool_t *pool, uint8_t tag,
+                                     bool visit_all, mi_block_visit_fun *visitor,
+                                     void *arg);
+
 struct _mimalloc_interp_state {
     // When exiting, threads place any segments with live blocks in this
     // shared pool for other threads to claim and reuse.
