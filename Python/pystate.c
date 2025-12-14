@@ -554,6 +554,9 @@ init_interpreter(PyInterpreterState *interp,
 
     llist_init(&interp->mem_free_queue.head);
     llist_init(&interp->asyncio_tasks_head);
+#ifdef Py_GIL_DISABLED
+    llist_init(&interp->mimalloc.abandoned_pool.head);
+#endif
     interp->asyncio_tasks_lock = (PyMutex){0};
     for (int i = 0; i < _PY_MONITORING_UNGROUPED_EVENTS; i++) {
         interp->monitors.tools[i] = 0;
@@ -3099,32 +3102,44 @@ tstate_mimalloc_bind(PyThreadState *tstate)
     // same thread that will use the thread state. The "mem" heap doubles as
     // the "backing" heap.
     mi_tld_t *tld = &mts->tld;
-    _mi_tld_init(tld, &mts->heaps[_Py_MIMALLOC_HEAP_MEM]);
+    
+    // Ensure mimalloc process is initialized (initializes subproc_main)
+    mi_process_init();
+    
+    // Initialize TLD manually (mimalloc v3: no _mi_tld_init, we embed TLD in thread state)
+    memset(tld, 0, sizeof(mi_tld_t));
+    // Use _mi_subproc_main() directly since we're manually initializing
+    // (this avoids potential issues with _mi_subproc() trying to access thread-local heap)
+    tld->subproc = _mi_subproc_main();
+    // Use _Py_ThreadId directly (MI_PRIM_THREAD_ID is defined to this in pycore_mimalloc.h)
+    tld->thread_id = _Py_ThreadId();
+    // thread_seq is just a unique sequence number; use a simple incrementing counter
+    // (mimalloc's internal counter is static, so we maintain our own)
+    static _Atomic(size_t) py_thread_seq_counter = MI_ATOMIC_VAR_INIT(0);
+    tld->thread_seq = mi_atomic_add_acq_rel(&py_thread_seq_counter, 1);
+    // For CPython threads, we're not in a threadpool
+    tld->is_in_threadpool = false;
+    tld->heap_backing = NULL;
+    tld->heaps = NULL;
+    tld->memid = _mi_memid_create(MI_MEM_STATIC);  // embedded in thread state
+    // Initialize stats (required by v3) - zero everything except version
+    memset(&tld->stats, 0, sizeof(mi_stats_t));
+    tld->stats.version = MI_STAT_VERSION;
+    
     llist_init(&mts->page_list);
 
-    // Exiting threads push any remaining in-use segments to the abandoned
-    // pool to be re-claimed later by other threads. We use per-interpreter
-    // pools to keep Python objects from different interpreters separate.
-    tld->segments.abandoned = &tstate->interp->mimalloc.abandoned_pool;
+    // Note: In mimalloc v3, abandoned pages are handled internally.
+    // The abandoned_pool is kept for API compatibility but is not used by v3.
 
-    // Don't fill in the first N bytes up to ob_type in debug builds. We may
-    // access ob_tid and the refcount fields in the dict and list lock-less
-    // accesses, so they must remain valid for a while after deallocation.
-    size_t base_offset = offsetof(PyObject, ob_type);
-    if (_PyMem_DebugEnabled()) {
-        // The debug allocator adds two words at the beginning of each block.
-        base_offset += 2 * sizeof(size_t);
-    }
-    size_t debug_offsets[_Py_MIMALLOC_HEAP_COUNT] = {
-        [_Py_MIMALLOC_HEAP_OBJECT] = base_offset,
-        [_Py_MIMALLOC_HEAP_GC] = base_offset,
-        [_Py_MIMALLOC_HEAP_GC_PRE] = base_offset + 2 * sizeof(PyObject *),
-    };
-
-    // Initialize each heap
-    for (uint8_t i = 0; i < _Py_MIMALLOC_HEAP_COUNT; i++) {
-        _mi_heap_init_ex(&mts->heaps[i], tld, _mi_arena_id_none(), false, i);
-        mts->heaps[i].debug_offset = (uint8_t)debug_offsets[i];
+    // Initialize each heap (mimalloc v3: use _mi_heap_init instead of _mi_heap_init_ex)
+    // The first heap becomes the backing heap automatically
+    // Initialize the first heap (backing heap) separately to ensure it's fully set up
+    mts->heaps[_Py_MIMALLOC_HEAP_MEM].memid = _mi_memid_create(MI_MEM_STATIC);
+    _mi_heap_init(&mts->heaps[_Py_MIMALLOC_HEAP_MEM], _mi_arena_id_none(), false, _Py_MIMALLOC_HEAP_MEM, tld);
+    // Now initialize the remaining heaps (they'll use the backing heap's random state)
+    for (uint8_t i = _Py_MIMALLOC_HEAP_MEM + 1; i < _Py_MIMALLOC_HEAP_COUNT; i++) {
+        mts->heaps[i].memid = _mi_memid_create(MI_MEM_STATIC);
+        _mi_heap_init(&mts->heaps[i], _mi_arena_id_none(), false, i, tld);
     }
 
     // Heaps that store Python objects should use QSBR to delay freeing
